@@ -1,5 +1,5 @@
 # Rustdesk-config
-A small tutorial on how to install and configure the RustDesk Server and Client.
+A small tutorial on how to install and configure the RustDesk Remote Desktop Server and Client.
 
 All commands shown on `Server.md` are in the `server.sh` file
 To configure the client side, follow the `Client.md` steps
