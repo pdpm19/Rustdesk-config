@@ -5,34 +5,56 @@ We're going to install docker using the APT repository
 ```bash
 #!/bin/bash
 
-# Update system
+# ========= Gather OS information =========
+echo "Gathering OS information..."
+source /etc/os-release
+REAL_OS_ID=$(echo "$ID" | tr '[:upper:]' '[:lower:]')
+VERSION_CODENAME=${VERSION_CODENAME:-$(lsb_release -cs)}
+ARCHITECTURE=$(dpkg --print-architecture)
+
+# Map real OS to Docker repository OS
+case "$REAL_OS_ID" in
+  pop|linuxmint|elementary|zorin)
+    DOCKER_OS_ID="ubuntu"
+    ;;
+  *)
+    DOCKER_OS_ID="$REAL_OS_ID"
+    ;;
+esac
+
+# Display the OS info
+echo "Found the following details from '/etc/os-release':"
+echo "  Real OS:            $REAL_OS_ID"
+echo "  Repository OS:      $DOCKER_OS_ID"
+echo "  Repository Release: $VERSION_CODENAME"
+echo "  CPU Architecture:   $ARCHITECTURE"
+echo ""
+
+# ========= Update system + dependencies =========
 sudo apt-get update && sudo apt-get upgrade -y
 
-# Install dependencies
+# Dependencies
 sudo apt-get install -y ca-certificates curl gnupg lsb-release
 
-# Set up Docker's GPG key
+# ========= Install docker =========
+# Keys
 sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/$(lsb_release -is | tr '[:upper:]' '[:lower:]')/gpg -o /etc/apt/keyrings/docker.asc
+sudo curl -fsSL https://download.docker.com/linux/$DOCKER_OS_ID/gpg -o /etc/apt/keyrings/docker.asc
 sudo chmod a+r /etc/apt/keyrings/docker.asc
 
-# Detect OS ID and version codename
-OS_ID=$(lsb_release -is | tr '[:upper:]' '[:lower:]')
-VERSION_CODENAME=$(lsb_release -cs)
-
-# Add Docker APT repo based on OS
+# APT
 echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/${OS_ID} \
-  ${VERSION_CODENAME} stable" | \
+  "deb [arch=$ARCHITECTURE signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/$DOCKER_OS_ID \
+  $VERSION_CODENAME stable" | \
   sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-# Update APT sources
+# Install
+echo "Installing Docker..."
 sudo apt-get update
-
-# Install Docker and related components
 sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-# Run test container
+# Test hello world
+echo "Hello World..."
 sudo docker run hello-world
 ```
 
@@ -54,13 +76,15 @@ If needed, the previous ports will need to be open in the firewall
 ```bash
 #!/bin/bash
 
-# Install UFW if it's not already installed
+# ========= Firewall Ports =========
+echo "Installing UFW..."
 sudo apt-get install -y ufw
 
-# Check if UFW is active
+# UFW status
+echo "UFW status..."
 UFW_STATUS=$(sudo ufw status | grep -i "Status: active")
 
-# Define local IP
+# Define local IP (adjust this!)
 LOCAL_IP="192.168.x.x"
 
 if [ -z "$UFW_STATUS" ]; then
@@ -97,7 +121,7 @@ Now we can download the executables
 LOCAL_IP="192.168.x.x"
 
 # Base directory for RustDesk files
-RUSTDESK_DIR="$HOME/rustdesk"
+RUSTDESK_DIR="$HOME/docker/rustdesk"
 HBBS_DIR="$RUSTDESK_DIR/hbbs"
 HBBR_DIR="$RUSTDESK_DIR/hbbr"
 
