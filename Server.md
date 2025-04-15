@@ -3,24 +3,36 @@
 ## 1. Install Docker
 We're going to install docker using the APT repository
 ```bash
-# Add Docker's official GPG key:
+#!/bin/bash
+
+# Update system
 sudo apt-get update && sudo apt-get upgrade -y
-sudo apt-get install ca-certificates curl
+
+# Install dependencies
+sudo apt-get install -y ca-certificates curl gnupg lsb-release
+
+# Set up Docker's GPG key
 sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/raspbian/gpg -o /etc/apt/keyrings/docker.asc
+sudo curl -fsSL https://download.docker.com/linux/$(lsb_release -is | tr '[:upper:]' '[:lower:]')/gpg -o /etc/apt/keyrings/docker.asc
 sudo chmod a+r /etc/apt/keyrings/docker.asc
 
-# Add the repository to Apt sources:
+# Detect OS ID and version codename
+OS_ID=$(lsb_release -is | tr '[:upper:]' '[:lower:]')
+VERSION_CODENAME=$(lsb_release -cs)
+
+# Add Docker APT repo based on OS
 echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/raspbian \
-  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/${OS_ID} \
+  ${VERSION_CODENAME} stable" | \
   sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Update APT sources
 sudo apt-get update
 
-# Install docker packages
-sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+# Install Docker and related components
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-# hello-world example
+# Run test container
 sudo docker run hello-world
 ```
 
@@ -40,30 +52,66 @@ RustDesk needs two executables:
 
 If needed, the previous ports will need to be open in the firewall
 ```bash
-# Install the firewall
-sudo apt-get install ufw
+#!/bin/bash
 
+# Install UFW if it's not already installed
+sudo apt-get install -y ufw
+
+# Check if UFW is active
+UFW_STATUS=$(sudo ufw status | grep -i "Status: active")
+
+# Define local IP
 LOCAL_IP="192.168.x.x"
-# Adds acess via SSH
-ufw allow proto tcp from $LOCAL_IP to any port 22
 
-# Adds the ports
-ufw allow 21114:21119/tcp
-ufw allow 8000/tcp
-ufw allow 21116/udp
-sudo ufw enable
+if [ -z "$UFW_STATUS" ]; then
+    echo "UFW is not active. Enabling it now..."
+    sudo ufw enable
+else
+    echo "UFW is already active."
+fi
+
+# Now (re)check status to be sure it's enabled before adding rules
+if sudo ufw status | grep -iq "Status: active"; then
+    echo "Applying firewall rules..."
+
+    # Allow SSH from local IP
+    sudo ufw allow proto tcp from "$LOCAL_IP" to any port 22
+
+    # Open desired TCP and UDP ports
+    sudo ufw allow 21114:21119/tcp
+    sudo ufw allow 8000/tcp
+    sudo ufw allow 21116/udp
+
+    echo "Firewall rules applied."
+else
+    echo "Failed to enable UFW. No rules were added."
+fi
 ```
 
 Now we can download the executables
 ```bash
-# First we create the home directory for rustdesk
-mkdir -p $HOME/rustdesk/hbbs
-mkdir -p $HOME/rustdesk/hbbr
-cd $HOME/rustdesk
+#!/bin/bash
 
-# Then we create the docker compose file (change the LOCAL_IP variable to your current network IP 192.168.x.x, before running this script)
+# ========= Configuration =========
+# Set your local IP address here (adjust this!)
 LOCAL_IP="192.168.x.x"
+
+# Base directory for RustDesk files
+RUSTDESK_DIR="$HOME/rustdesk"
+HBBS_DIR="$RUSTDESK_DIR/hbbs"
+HBBR_DIR="$RUSTDESK_DIR/hbbr"
+
+# ========= Setup Directories =========
+echo "Creating directories for RustDesk server..."
+mkdir -p "$HBBS_DIR" "$HBBR_DIR"
+cd "$RUSTDESK_DIR" || exit
+
+# ========= Create Docker Compose File =========
+echo "Creating Docker Compose file..."
+
 cat <<EOF > docker-compose.yml
+version: '3.8'
+
 networks:
   rustdesk-net:
     external: false
@@ -71,15 +119,15 @@ networks:
 services:
   hbbs:
     container_name: hbbs
+    image: rustdesk/rustdesk-server:latest
+    command: hbbs -r ${LOCAL_IP}:21117 -k _
+    volumes:
+      - ./hbbs:/root
     ports:
       - 21115:21115
       - 21116:21116
       - 21116:21116/udp
       - 21118:21118
-    image: rustdesk/rustdesk-server:latest
-    command: hbbs -r $LOCAL_IP:21117 -k _
-    volumes:
-      - ./hbbs:/root
     networks:
       - rustdesk-net
     depends_on:
@@ -88,23 +136,27 @@ services:
 
   hbbr:
     container_name: hbbr
-    ports:
-      - 21117:21117
-      - 21119:21119
     image: rustdesk/rustdesk-server:latest
     command: hbbr -k _
     volumes:
       - ./hbbr:/root
+    ports:
+      - 21117:21117
+      - 21119:21119
     networks:
       - rustdesk-net
     restart: unless-stopped
 EOF
 
-# Start the containers
+# ========= Launch Containers =========
+echo "Starting RustDesk server containers..."
 sudo docker compose up -d
 
-# Verify
-ls $HOME/rustdesk
+# ========= Verify =========
+echo "Contents of $RUSTDESK_DIR:"
+ls "$RUSTDESK_DIR"
+
+echo "Running Docker containers:"
 sudo docker ps
 ```
 ![docker ps](pictures/docker_done.png)
